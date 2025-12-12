@@ -1,0 +1,783 @@
+---
+title: "<center>Predicting if Glass was from a Building</center>"
+author: "Ainsley Carlson"
+date: ''
+output:
+  slidy_presentation:
+    font_adjustment: 1
+    footer: ' December 11, 2025'
+    widescreen: true
+    self_contained: true
+  ioslides_presentation: default
+  
+---
+
+
+```{r setup, include=FALSE}
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+my_packages <- c("tidyverse", "RCurl", "GGally", "vctrs", "gridExtra", "tinytex", "car", "gridExtra", "knitr",  "pROC", "vctrs", "MASS", "neuralnet", "rpart", "rpart.plot", "plotly", "pander", "patchwork", "scales", "dbscan", "ThresholdROC")                                    
+not_installed <- my_packages[!(my_packages %in% installed.packages()[ , "Package"])]  
+if(length(not_installed)) install.packages(not_installed)    
+
+ 
+library(tidyverse)
+library(readr)
+library(RCurl)
+library(dplyr)
+library(GGally)
+library(vctrs)
+library(gridExtra)
+library(car)
+library(knitr)
+library(pROC)
+library(vctrs)
+library(MASS)
+library(neuralnet)
+library(rpart)
+library(rpart.plot)
+library(plotly)
+library(pander)
+library(patchwork)
+library(scales)
+library(dbscan)
+library(ThresholdROC)
+
+knitr::opts_chunk$set(echo=FALSE, 
+                      warning=FALSE, 
+                      results=TRUE, 
+                      message=FALSE, 
+                      comment=NA)
+```
+
+# Agenda
+<ol>
+  <li>Introduction</li>
+  <li>Questions to Answer</li>
+  <li>Data Overview</li>
+  <li>Feature Engineering</li>
+  <li>Candidate Models</li>
+  <li>Model Identification Process</li>
+  <li>Results</li>
+  <li>Conclusions</li>
+  <li>Limitations</li>
+</ol>
+
+# Introduction
+
+
+
+- Data comes from the USA Forensic Science Service
+  - Featured  6 types of glass defined in terms of their oxide content 
+  - Real life data collected to test accuracy of classification methods
+  - Donated to UC Irvine Machine Learning  Repository on August 31, 1987
+    - Link: https://archive.ics.uci.edu/dataset/42/glass+identification
+  
+
+</div>
+
+
+
+
+
+
+# Questions of Interest
+
+- Does a model with engineered features provides better than a model without them?
+  - Better predictions can aid forensic investigations in determining where the glass came from
+- How accurately can I predict if the glass was from a building?
+- What variables will be important in predicting if glass was from a building?
+
+<div style="font-size:3">
+
+
+</div>
+
+
+
+
+# Dataset Decription
+
+<div align="left">
+
+- Data originally contained 214 observations of 10 variables and no missing values with variable "Building" being created for  this analysis 
+  - Variables are:
+    - RI		[Numeric]:	refractive index
+    - Na		[Numeric]:	Sodium	weight percent in corresponding oxide 
+    - Mg		[Numeric]:	Magnesium	weight percent in corresponding oxide	
+    - Al		[Numeric]:	Aluminum	weight percent in corresponding oxide	
+    - Si		[Numeric]:	Silicon	weight percent in corresponding oxide	
+    - K		  [Numeric]:	Potassium	weight percent in corresponding oxide	
+    - Ca		[Numeric]:	Calcium	weight percent in corresponding oxide	
+    - Ba		[Numeric]:	Barium	weight percent in corresponding oxide	
+    - Fe	  [Numeric]:	Iron	weight percent in corresponding oxide	
+    - Type  [Categorical]:  Glass type where type=1,2 are building windows, type=3,4 are vehicle windows, type=5 is containers, type=6 is tableware, and type=7 is headlamps. 
+    - Building [binary]: If the glass comes from a building or not, used for binary prediction variable.
+     </td>
+     </tr>
+   </table>
+ </td>
+</tr>
+</table>
+
+</div>  
+
+
+
+
+
+# Exploratory Data Analysis
+## Summary Statistics
+
+```{r sums,echo=FALSE}
+#load data from github
+glass <- read_csv("https://raw.githubusercontent.com/carlsonae/sta-551-proj3/refs/heads/main/glass.csv")
+
+glass <- glass %>%
+  mutate(building=ifelse(Type<=2, "Yes", "No"))
+
+summary(glass)
+```
+
+
+# Variable Correlations
+
+<div align="center">
+```{r corrs , echo=FALSE}
+mat_glass<-cor(glass[,-(10:11)])
+round(mat_glass, 4)
+```
+</div>
+
+- Refraction Index is highly correlated with Calcium with r=0.8104
+  - Useful for performing K-means clustering
+
+# Variable Distributions
+
+<div align="center">
+
+```{r numeda, fig.align='center', fig.width=7, fig.height=5, echo=FALSE}
+
+p1<-glass %>%
+  ggplot(aes(x = RI)) +
+  geom_density(alpha=0.6, fill="#785EF0", color="#785EF0") +
+  labs(title="Refractive Index", x="Score", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+p2<-glass %>%
+  ggplot(aes(x = Na)) +
+  geom_density(alpha=0.6, fill="#DC267F", color="#DC267F") +
+  labs(title="Sodium Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+p3<-glass %>%
+  ggplot(aes(x = Mg)) +
+  geom_density(alpha=0.6,  fill="#648FFF", color="#648FFF") +
+  labs(title="Magnesium Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+p4<-glass %>%
+  ggplot(aes(x = Al)) +
+  geom_density(alpha=0.6, fill="#DC267F", color="#DC267F") +
+  labs(title="Aluminum Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+p5<-glass %>%
+  ggplot(aes(x = Si)) +
+  geom_density(alpha=0.6, fill="#648FFF", color="#648FFF") +
+  labs(title="Silicon Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+p6<-glass %>%
+  ggplot(aes(x = K)) +
+  geom_density(alpha=0.6,  fill="#785EF0", color="#785EF0") +
+  labs(title="Potassium Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+
+p7<-glass %>%
+  ggplot(aes(x = Ca)) +
+  geom_density(alpha=0.6, fill="#648FFF", color="#648FFF") +
+  labs(title="Calcium Weight Percent", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+p8<-glass %>%
+  ggplot(aes(x = Ba)) +
+  geom_density(alpha=0.6, fill="#785EF0", color="#785EF0") +
+  labs(title="Barium Weight Percent", x="Percent", y="Count")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+p9<-glass %>%
+  ggplot(aes(x = Fe)) +
+  geom_density(alpha=0.6,  fill="#DC267F", color="#DC267F") +
+  labs(title="Iron Weight Percent", x="Percent", y="Count")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 +
+  plot_layout(ncol = 3) + 
+  plot_annotation(title = 'Density Curves of Feature Variables')
+
+
+```
+
+</div>
+
+# Variable Distributions by if Glass was Building Glass
+
+<div align="center">
+```{r growthmilestone, fig.align='center', fig.width=7, fig.height=5, echo=FALSE}
+
+
+c1<-glass %>%
+  ggplot(aes(x = RI, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Refractive Index", x="Score", y="Density", fill='Building')  +
+  theme_minimal() +
+   theme(legend.position='left', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+c2<-glass %>%
+  ggplot(aes(x = Na, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Sodium", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+c3<-glass %>%
+  ggplot(aes(x = Mg, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Magnesium", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+c4<-glass %>%
+  ggplot(aes(x = Al, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Aluminum", x="Percent", y="Density", fill='Building')  +
+  theme_minimal() +
+   theme(legend.position='left', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+c5<-glass %>%
+  ggplot(aes(x = Si, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Silicon", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+c6<-glass %>%
+  ggplot(aes(x = K, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Potassium", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+
+c7<-glass %>%
+  ggplot(aes(x = Ca, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Calcium", x="Percent", y="Density", fill='Building')  +
+  theme_minimal() +
+   theme(legend.position='left', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+
+
+c8<-glass %>%
+  ggplot(aes(x = Ba, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Barium", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8)) 
+
+c9<-glass %>%
+  ggplot(aes(x = Fe, fill=building)) +
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values=c("#785EF0","#DC267F")) +
+  labs(title="Iron", x="Percent", y="Density")  +
+  theme_minimal() +
+   theme(legend.position='none', axis.text.x = element_text(angle=0, vjust=.7, hjust=0.8))
+
+
+
+
+c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 +
+  plot_layout(ncol = 3) + 
+  plot_annotation(title = 'Density Curves of Variables by if Glass was from a Building')
+
+```
+</div>
+
+
+
+# Principal Component Analysis (PCA) 
+## PCA Vectors
+<div align="center">
+```{r pcavecs}
+log.glass = log(glass[,-(10:11)]+1)   # drop the categorical variable in the original 
+                            # data set and transform all numerical to the
+                            # log-scale
+gl.pca <- prcomp(log.glass, center = TRUE, scale = TRUE)
+# summary(ir.pca)[6]   # use the command to explore the possible information
+                       # available in the output of the summary.
+
+kable(round(gl.pca$rotation, 2), caption="Factor loadings of the PCA")
+
+
+```
+</div>
+
+<div align="left">
+- Refractive Index is a major contributor to both PC1 and PC8
+  - PC8 is repetive and will not contribute much new information
+- Other major contributors are:
+  - Magnesium,iron,  barium, potassium, and calcium 
+
+</div>
+
+
+# PCA Importance
+<div align="center">
+```{r pcavar}
+kable(summary(gl.pca)$importance, caption="The importance of each principal component")
+```
+
+</div>
+
+<div align="left">
+
+- By PC6 approximately 95% of the total variance is controlled for
+  - Only include up to PC6
+
+</div >
+
+```{r finalglass}
+final.glass = glass
+final.glass$RI.pc = gl.pca$x[, 1]
+final.glass$Mg.pc = gl.pca$x[, 2]
+final.glass$K.pc = gl.pca$x[, 3]
+final.glass$Si.pc = gl.pca$x[, 4]
+final.glass$Fe.pc = gl.pca$x[, 5]
+final.glass$Ba.pc = gl.pca$x[, 6]
+
+```
+
+# K-Means Clustering 
+
+      
+```{r kmeans}
+clust.data = glass[, c("RI", "Ca")]
+scaled.data = as.data.frame(scale(clust.data)[,1:2])
+
+```
+
+```{r kscale} 
+
+k2 <- kmeans(x = scaled.data, 
+             centers = 2, 
+             iter.max = 10,
+             nstart = 25,
+             algorithm = "Lloyd", #"Hartigan-Wong",
+             trace = FALSE)
+
+```
+
+
+<tr>
+<td>
+   <table border = 0 width="80%">
+     <tr>
+       <td align = "left"> 
+         
+```{r kgraph, fig.align='center', fig.width=5, fig.height=5}
+
+wss = NULL
+K = 15
+for (i in 1:K){
+  wss[i] = kmeans(scaled.data, i, 1 )$tot.withinss
+ }
+## elbow plot
+plot(1:K, wss, type ="b",
+          col= "#648FFF",
+          xlab="Number of Clusters",
+          ylab = "WSS",
+          main = "Elbow Plot for Selecting Optimal Number of Clusters")
+
+```
+  </td>
+  <td  align = "left"> 
+  
+```{r vizkgraph, fig.align='center', fig.width=5, fig.height=5}
+colors<- c("#785EF0","#DC267F", "#FE6100", "#FFB000")
+k4 <- kmeans(x = scaled.data, 
+             centers = 4, 
+             iter.max = 10,
+             nstart = 25,
+             algorithm = "Lloyd", # "Hartigan-Wong",
+             trace = FALSE)
+scaled.data$group = k4$cluster
+### Plot the clusters
+# Scatter plot
+plot(scaled.data$RI, scaled.data$Ca,
+     pch = 19,
+     col = colors[factor(scaled.data$group)],
+     xlab ="Refractive Index",
+     ylab = "Calcium",
+     main = "Clustering Performance Visual Check \n 4 K-Mean Groups")
+
+# Legend
+legend("topright",
+       legend = levels(factor(scaled.data$group)),
+       pch = 19,
+       col = colors)
+
+
+
+```
+      </td>
+     </tr>
+   </table>
+ </td>
+</tr>
+</table>
+
+</div>  
+
+
+
+
+
+# Local Outlier Factor (LOF)
+
+- The LOF isused to identify possible local outliers and can improve model prediction accuracy.
+- Below are a comparison of LOF AUC scores at different numbers of K-nearest neigbors
+  - LOF with 75 K-nearest neighbors appears to perform the best
+```{r glasschange}
+glass <- glass %>%
+  mutate(isbuilding=ifelse(building=="Yes", 1, 0))
+```
+
+```{r lofcomparisons}
+lof.glass.10  <- lof(glass [, 1:9], minPts =75) 
+lof.glass.50  <- lof(glass [,1:9], minPts = 85) 
+lof.glass.100  <- lof(glass [, 1:9], minPts = 100) 
+lof.glass.200  <- lof(glass [, 1:9], minPts = 150) 
+  ROCobj.lof.10 <- roc(glass$isbuilding, lof.glass.10, direction = ">")
+  ROCobj.lof.50 <- roc(glass$isbuilding, lof.glass.50, direction = ">")
+  ROCobj.lof.100 <- roc(glass$isbuilding, lof.glass.100, direction = ">")
+  ROCobj.lof.200 <- roc(glass$isbuilding, lof.glass.200, direction = ">")
+  ##
+  sen.LOF.10 = ROCobj.lof.10$sensitivities
+  fnr.LOF.10 = 1 - ROCobj.lof.10$specificities
+  ##
+  sen.LOF.50 = ROCobj.lof.50$sensitivities
+  fnr.LOF.50 = 1 - ROCobj.lof.50$specificities
+  ##
+  sen.LOF.100 = ROCobj.lof.100$sensitivities
+  fnr.LOF.100 = 1 - ROCobj.lof.100$specificities
+  ##
+  sen.LOF.200 = ROCobj.lof.200$sensitivities
+  fnr.LOF.200 = 1 - ROCobj.lof.200$specificities
+  
+```
+
+```{r lofcomparisonspic, fig.align='center', fig.width=5, fig.height=5}
+par(type="s")
+colors = c("#785EF0","#DC267F", "#FE6100", "#FFB000")
+plot(fnr.LOF.10, sen.LOF.10, type = "l", lwd = 2, col = colors[1],
+     xlim = c(0,1),
+     ylim = c(0,1),
+     xlab = "1 - specificity",
+     ylab = "sensitivity",
+     main = "ROC Curves of LOF Detection Comparison")
+lines(fnr.LOF.50, sen.LOF.50, lwd = 2, lty = 2, col = colors[2])
+lines(fnr.LOF.100, sen.LOF.100, lwd = 1, col = colors[3])
+lines(fnr.LOF.200, sen.LOF.200, lwd = 1, col = colors[4])
+
+segments(0,0,1,1, lwd =1, col = "#648FFF", lty = 2)
+legend("topleft", c("LOF.75", "LOG.85", "LOF.100", "LOF.150"), 
+       col=colors, lwd=c(2,2,1,1,1),
+       lty=c(1,2,1,1,2), bty = "n", cex = 0.7)
+
+##
+AUC.10 = ROCobj.lof.10$auc
+AUC.50 = ROCobj.lof.50$auc
+AUC.100 = ROCobj.lof.100$auc
+AUC.200 = ROCobj.lof.200$auc
+text(0.87, 0.25, paste("AUC.75 = ", round(AUC.10,4)), col=colors[1], cex = 0.7, adj = 1)
+text(0.87, 0.20, paste("AUC.85 = ", round(AUC.50,4)), col=colors[2], cex = 0.7, adj = 1)
+text(0.87, 0.15, paste("AUC.100 = ", round(AUC.100,4)), col=colors[3], cex = 0.7, adj = 1)
+text(0.87, 0.10, paste("AUC.150 = ", round(AUC.200,4)), col=colors[4], cex = 0.7, adj = 1)
+
+```
+
+
+
+
+```{r kmeanfinalglass}
+final.glass$kmeans = k4$cluster
+final.glass$lof= lof.glass.10
+```
+
+
+
+```{r glassre}
+glass<-glass %>%
+  select(!c(building, Type))
+```
+
+
+# Candidate Models
+
+<tr>
+<td>
+   <table border = 0 width="80%">
+     <tr>
+       <td align = "left"> 
+         
+```{r logregs}
+base.log = lm(isbuilding~1, data=glass)
+
+sat.log = lm(isbuilding~., data=glass)
+
+step.log <- step(base.log, direction='both', scope=formula(sat.log), trace=0)
+summary(step.log)
+
+```
+  </td>
+      <td  align = "left"> 
+```{r englogs}
+final.glass<-final.glass %>%
+  mutate(isbuilding=ifelse(building=="Yes", 1, 0)) %>%
+  select(!c(building, Type))
+
+eng.base.log = lm(isbuilding~1, data=final.glass)
+
+eng.sat.log = lm(isbuilding~., data=final.glass)
+
+eng.step.log <- step(eng.base.log, direction='both', scope=formula(eng.sat.log), trace=0)
+summary(eng.step.log)
+
+```
+
+  </td>
+   </tr>
+   </table>
+ </td>
+</tr>
+</table>
+</div>
+
+
+# Model Identification Process
+ - Had two sets of data with the one only containing the original variables and the other containing the original variable and engineered variables
+- For each set of data I created an intercept only model and a saturated model
+- Then performed a stepwise regression going both forwards and backwards to find the best model for each set of data
+- Stepwise regressions would be my two models for comparison as other models would be too computationally heavy to compare
+
+
+
+<div align="center">
+# Results
+</div>
+
+```{r baseaucs}
+btAUClog.vec = c()
+## Select the number of bootstrap samples to be generated
+B = 1000
+## Size of the original sample
+sample.size = dim(glass)[1]
+## Vector of cut-off probabilities for construct ROC
+cut.off.seq = seq(0,1, length = 100)
+# bootstrap procedure starts here
+for (k in 1:B){
+  boot.id = sample(1:sample.size, sample.size, replace = TRUE)   # Bootstrap IDs
+  boot.sample = glass[boot.id,]      # Bootstrap samples         
+  ## Bootstrap logistic regression model is given below
+  boot.logistic = glm(isbuilding~Mg +Na+Al+RI, family = binomial, data = boot.sample)
+  ##
+  pred.prob = predict.glm(boot.logistic, newdata = boot.sample, type = "response")
+  ## vectors to store sensitivity and specificity
+  sensitivity.vec = NULL
+  specificity.vec = NULL
+    for (i in 1:100){
+   pred.building = as.numeric(pred.prob > cut.off.seq[i])
+   ### components for defining various measures
+   TN = sum(pred.building == 0 & boot.sample$isbuilding == 0)
+   FN = sum(pred.building == 0 & boot.sample$isbuilding == 1)
+   FP = sum(pred.building == 1 & boot.sample$isbuilding == 0)
+   TP = sum(pred.building == 1 & boot.sample$isbuilding == 1)
+   ###
+   sensitivity.vec[i] = TP / (TP + FN)
+   specificity.vec[i] = TN / (TN + FP)
+  }
+  one.minus.spec = 1 - specificity.vec
+  sens.vec = sensitivity.vec
+  ## A better approx of ROC, need library {pROC}
+  prediction = pred.prob
+  category = boot.sample$isbuilding == 1
+  ROCobj <- roc(category, prediction)
+  btAUClog.vec[k] = round(auc(ROCobj),4)
+}
+
+```
+
+
+
+```{r engbaseaucs}
+engAUClog.vec = c()
+## Select the number of bootstrap samples to be generated
+B = 1000
+## Size of the original sample
+sample.size = dim(final.glass)[1]
+## Vector of cut-off probabilities for construct ROC
+cut.off.seq = seq(0,1, length = 100)
+# bootstrap procedure starts here
+for (k in 1:B){
+  boot.id = sample(1:sample.size, sample.size, replace = TRUE)   # Bootstrap IDs
+  boot.sample = final.glass[boot.id,]      # Bootstrap samples         
+  ## Bootstrap logistic regression model is given below
+  boot.logistic = glm(isbuilding~Ca+Na+lof+RI.pc, family = binomial, data = boot.sample)
+  ##
+  pred.prob = predict.glm(boot.logistic, newdata = boot.sample, type = "response")
+  ## vectors to store sensitivity and specificity
+  sensitivity.vec = NULL
+  specificity.vec = NULL
+    for (i in 1:100){
+   pred.building = as.numeric(pred.prob > cut.off.seq[i])
+   ### components for defining various measures
+   TN = sum(pred.building == 0 & boot.sample$isbuilding == 0)
+   FN = sum(pred.building == 0 & boot.sample$isbuilding == 1)
+   FP = sum(pred.building == 1 & boot.sample$isbuilding == 0)
+   TP = sum(pred.building == 1 & boot.sample$isbuilding == 1)
+   ###
+   sensitivity.vec[i] = TP / (TP + FN)
+   specificity.vec[i] = TN / (TN + FP)
+  }
+  one.minus.spec = 1 - specificity.vec
+  sens.vec = sensitivity.vec
+  ## A better approx of ROC, need library {pROC}
+  prediction = pred.prob
+  category = boot.sample$isbuilding == 1
+  ROCobj <- roc(category, prediction)
+  engAUClog.vec[k] = round(auc(ROCobj),4)
+}
+
+```
+
+# Bootstrapping Final Models: Histograms of AUC Scores
+
+<tr>
+<td>
+   <table border = 0 width="80%">
+     <tr>
+       <td align = "left"> 
+         
+```{r histlog, fig.align='center', fig.width=5, fig.height=5}
+hist(btAUClog.vec, xlab = "Bootstrap AUC", main = "Bootstrap Sampling Distribution of AUCs \n Model with No Engineered Variables", col="#785EF0")
+```
+  </td>
+  <td  align = "left"> 
+```{r enghistlog, fig.align='center', fig.width=5, fig.height=5}
+hist(engAUClog.vec, xlab = "Bootstrap AUC", main = "Bootstrap Sampling Distribution of AUCs \n Model with Engineered Variables", col="#DC267F")
+```
+      </td>
+     </tr>
+   </table>
+ </td>
+</tr>
+</table>
+
+<div align="left">
+- Original variables model appears normally distributed with a slight left skew
+- Engineered model has slightly higher range and smaller narrower distribution
+</div>
+
+</div>
+
+
+# Bootstrapping Final Models: 95% Quantile and Mean of AUCs
+
+<tr>
+<td>
+   <table border = 0 width="80%">
+     <tr>
+       <td align = "left"> 
+    Model with No Engineered Variables     
+```{r statslog}
+pander(quantile(btAUClog.vec, c(0.025, 0.975)))
+
+mean(btAUClog.vec)
+```
+      
+  </td>
+      
+  <td  align = "left"> 
+
+Model with Engineered Variables
+```{r engstatslog}
+pander(quantile(engAUClog.vec, c(0.025, 0.975)))
+
+mean(engAUClog.vec)
+```
+
+  </td>
+   </tr>
+     
+   </table>
+ </td>
+</tr>
+</table>
+</div>
+
+
+
+
+
+
+
+
+#  Conclusion
+
+- Engineered model had slightly higher average bootstrapped AUC than original variable model
+  - Would have expected a larger improvement in AUC score with engineered model
+- Original variables model is much simpler and less time consuming to identify 
+  - Do not have to create many different engineered variables
+- Scenarios where even a slight improvement in AUC is valuable would benefit most from feature engineering
+- It may be best to develop a model with the original variables in the data first
+
+
+# Limitations
+- Lack of improvement may be due to already high AUC score or not enough data
+  - With a larger dataset I could increase the K nearest neighbors for the LOF
+- Feature engineering effectiveness may also be impacted by personal judgement
+- Only compared between logistic regression and did not consider other models
+  - i.e. neural networks, decision trees, etc. 
+
+<div align="center">
+# Questions?
+</div>
+
